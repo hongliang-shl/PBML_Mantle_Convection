@@ -785,27 +785,9 @@ def load_train_objs(
                 max_examples_percent_per_epoch=max_examples_percent_per_epoch,
             )
 
-            if debug:
-                dataset_init[an] = None
-            else:
-                dataset_len = int(
-                    (len(sims_vec_init[an]) - len(sims_vec_init[an]) % world_size)
-                    / world_size
-                )
-                start_ind = int(dataset_len * rank)
-                end_ind = int(dataset_len * (rank + 1))
-                dataset_init[an] = dataset_pytorch(
-                    data_dir,
-                    an,
-                    scale,
-                    is_init=True,
-                    p_pred=p_pred,
-                    noise=noise,
-                    debug=debug,
-                    sims_vec=sims_vec_init[an][start_ind:end_ind],
-                    times_vec=times_vec_init[an][start_ind:end_ind],
-                    max_examples_percent_per_epoch=max_examples_percent_per_epoch,
-                )
+            # init oversampling channel disabled (see note in main where
+            # sims_vec_init/times_vec_init are forced to None).
+            dataset_init[an] = None
 
     optimizer = torch.optim.Adam(
         [{"params": model_uvp.parameters(), "lr": start_lr, "weight_decay": l2_reg}]
@@ -1211,12 +1193,19 @@ if __name__ == "__main__":
             data_dir, an, is_init=False, debug=debug, roll_forward=roll_forward
         )
 
-        if debug:
-            sims_vec_init[an], times_vec_init[an] = None, None
-        else:
-            sims_vec_init[an], times_vec_init[an] = init_dataset(
-                data_dir, an, is_init=True, debug=debug, roll_forward=roll_forward
-            )
+        # NOTE: The Zenodo public dataset only ships *_select_snaps.pt files
+        # (non-initial steps). The init oversampling channel relies on
+        # *_select_init.pt which is unavailable in that package, so disable it
+        # unconditionally here. If you have the full preprocessed dataset
+        # (including *_select_init.pt and *_select.pt), restore the original
+        # branch below.
+        sims_vec_init[an], times_vec_init[an] = None, None
+        # if debug:
+        #     sims_vec_init[an], times_vec_init[an] = None, None
+        # else:
+        #     sims_vec_init[an], times_vec_init[an] = init_dataset(
+        #         data_dir, an, is_init=True, debug=debug, roll_forward=roll_forward
+        #     )
 
     mp.spawn(
         main,

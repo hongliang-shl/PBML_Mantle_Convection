@@ -374,20 +374,20 @@ def get_indices(data_dir, an, is_init=False, debug=True, roll_forward=1):
         py_dir = data_dir + "/" + sim[1] + "/sim_" + str(sim[0])
         if check and si not in ignore_inds:  # and (si==0 or si == 110):
             take_every = 1
+            # NOTE: Adapted for the Zenodo public dataset which only ships
+            # *_select_snaps.pt. The init channel cannot be populated, and the
+            # main channel always falls back to snaps regardless of the debug
+            # flag. To restore the original behavior (requiring the full
+            # preprocessed dataset with *_select_init.pt / *_select.pt /
+            # *_i_vec_select.pt), revert this block.
             if is_init:
-                i_vec = torch.load(
-                    py_dir + "/e" + str(take_every) + "_i_vec_select_init.pt"
-                )
-            else:
-                if debug:
-                    u = torch.load(
-                        py_dir + "/e" + str(take_every) + "_uprev_data_select_snaps.pt"
-                    )
-                    i_vec = np.arange(u.shape[0])
-                else:
-                    i_vec = torch.load(
-                        py_dir + "/e" + str(take_every) + "_i_vec_select.pt"
-                    )
+                # No *_select_init.pt available; the caller (multigpu.main)
+                # already disables the init channel, so we should not be hit.
+                continue
+            u = torch.load(
+                py_dir + "/e" + str(take_every) + "_uprev_data_select_snaps.pt"
+            )
+            i_vec = np.arange(u.shape[0])
             for i_prev in i_vec:
                 sims_vec.append(sim[0])
                 times_vec.append(i_prev)
@@ -574,89 +574,47 @@ class NewADDataset(Dataset):
                         )
 
                 else:
+                    # NOTE: Adapted for the Zenodo public dataset which only
+                    # ships *_select_snaps.pt. Both the init branch and the
+                    # main branch fall back to *_select_snaps.pt regardless
+                    # of the `debug` flag. The init channel should anyway be
+                    # disabled by the caller (multigpu.main) when only the
+                    # public package is available; we keep the if-branch for
+                    # safety so it does not crash if invoked. To restore the
+                    # original behavior (requires the full preprocessed
+                    # dataset with *_select_init.pt and *_select.pt /
+                    # *_i_vec_select.pt), revert this block.
+                    if p_pred:
+                        raise ValueError(
+                            "p_pred=True requires *_pprev_data_select*.pt "
+                            "files which are not in the Zenodo public "
+                            "package. Set p_pred=False to use *_select_snaps "
+                            "data, or obtain the full preprocessed dataset."
+                        )
+                    u = torch.load(
+                        py_dir
+                        + "/e"
+                        + str(take_every)
+                        + "_uprev_data_select_snaps.pt"
+                    )
+                    v = torch.load(
+                        py_dir
+                        + "/e"
+                        + str(take_every)
+                        + "_vprev_data_select_snaps.pt"
+                    )
+                    Tprev = torch.load(
+                        py_dir
+                        + "/e"
+                        + str(take_every)
+                        + "_Tprev_data_select_snaps.pt"
+                    )
+                    i_vec = np.arange(u.shape[0])
                     if is_init:
-                        u = torch.load(
-                            py_dir
-                            + "/e"
-                            + str(take_every)
-                            + "_uprev_data_select_init.pt"
-                        )
-                        v = torch.load(
-                            py_dir
-                            + "/e"
-                            + str(take_every)
-                            + "_vprev_data_select_init.pt"
-                        )
-                        if p_pred:
-                            p = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_pprev_data_select_init.pt"
-                            )
-                        Tprev = torch.load(
-                            py_dir
-                            + "/e"
-                            + str(take_every)
-                            + "_Tprev_data_select_init.pt"
-                        )
-                        i_vec = torch.load(
-                            py_dir + "/e" + str(take_every) + "_i_vec_select_init.pt"
-                        )
-                    else:
-                        if debug:
-                            u = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_uprev_data_select_snaps.pt"
-                            )
-                            v = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_vprev_data_select_snaps.pt"
-                            )
-                            Tprev = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_Tprev_data_select_snaps.pt"
-                            )
-                            i_vec = np.arange(u.shape[0])
-                            if p_pred:
-                                raise ValueError(
-                                    "p_pred is not implemented in debug mode"
-                                )
-                        else:
-                            u = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_uprev_data_select.pt"
-                            )
-                            v = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_vprev_data_select.pt"
-                            )
-                            if p_pred:
-                                p = torch.load(
-                                    py_dir
-                                    + "/e"
-                                    + str(take_every)
-                                    + "_pprev_data_select.pt"
-                                )
-                            Tprev = torch.load(
-                                py_dir
-                                + "/e"
-                                + str(take_every)
-                                + "_Tprev_data_select.pt"
-                            )
-                            i_vec = torch.load(
-                                py_dir + "/e" + str(take_every) + "_i_vec_select.pt"
-                            )
+                        # caller should not reach here, but be defensive: take
+                        # the first few frames as a stand-in for the
+                        # initialization-phase oversampling subset.
+                        i_vec = i_vec[: min(5, len(i_vec))]
 
                     for i, i_prev in enumerate(i_vec):
                         if len(sims_vec) > 0:
